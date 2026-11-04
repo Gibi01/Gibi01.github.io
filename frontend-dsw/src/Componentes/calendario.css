@@ -1,0 +1,15 @@
+.calendario { --fc-border-color: #DEE1E6; --fc-button-bg-color: #8D6700; --fc-button-border-color: #8D6700; --fc-button-hover-bg-color: #6F5100; --fc-button-hover-border-color: #6F5100; --fc-button-active-bg-color: #6F5100; --fc-button-active-border-color: #6F5100; --fc-today-bg-color: #FAF5E6; min-width: 0; }
+.calendario .fc { font-family: Arial, sans-serif; }
+.calendario .fc-toolbar-title { font-size: 1.25rem; color: #6F5100; }
+.calendario .fc-button { min-height: 44px; }
+.calendario .fc-event { cursor: pointer; border-radius: 4px; }
+.calendario .fc-event-title { font-weight: 600; }
+.calendario .fc-col-header-cell-cushion { padding: 10px 2px; }
+.calendario .fc-timegrid-slot { height: 30px; }
+.calendario .fc-event:focus-visible { outline: 3px solid #0277BD; outline-offset: 2px; }
+@media (max-width: 599px) {
+  .calendario .fc-toolbar { flex-wrap: wrap; gap: 12px; }
+  .calendario .fc-toolbar-title { font-size: 1.1rem; }
+  .calendario .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) { order: -1; width: 100%; }
+  .calendario .fc-button { padding: 6px 9px; }
+}

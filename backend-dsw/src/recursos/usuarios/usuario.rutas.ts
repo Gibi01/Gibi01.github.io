@@ -1,4 +1,5 @@
 import { Router } from "express"
+import { perfilAdmin, historialAdmin } from './usuarioAdmin.controlador.js';
 import {
   sanitizeusuarioInput,
   validarUsuarioCreacion,
@@ -17,6 +18,8 @@ export const usuarioRouter = Router()
 usuarioRouter.get('/', verificarSesion, autorizarRoles('admin'), findAll);
 usuarioRouter.get('/me', verificarSesion, me);
 usuarioRouter.get('/listado', verificarSesion, autorizarRoles('admin'), listado);
+usuarioRouter.get('/:id/perfil-admin', verificarSesion, autorizarRoles('admin'), perfilAdmin);
+usuarioRouter.get('/:id/turnos-admin', verificarSesion, autorizarRoles('admin'), historialAdmin);
 usuarioRouter.get('/:id', verificarSesion, findOne);
 usuarioRouter.post('/', sanitizeusuarioInput, validarUsuarioCreacion, add);
 usuarioRouter.put('/:id', verificarSesion, sanitizeusuarioInput, update);

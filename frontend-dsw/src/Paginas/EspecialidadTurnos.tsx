@@ -1,3 +1,4 @@
+import HorariosPorFranja from '../Componentes/HorariosPorFranja';
 import EncabezadoPagina from '../Componentes/EncabezadoPagina';
 import TituloSeccion from '../Componentes/TituloSeccion';
 import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined';
@@ -16,7 +17,6 @@ import {
   Stack,
   CircularProgress,
   Alert,
-  Button,
   Chip,
   List,
   ListItemButton,
@@ -32,7 +32,7 @@ import {
 } from "../Servicios/turnosService";
 import { getObrasSociales } from "../Servicios/obraSocialService";
 import { useAuth } from "../Contextos/AuthContext";
-import { formatearHora, formatearFechaHora } from "../Servicios/formatoFechaHora";
+import { formatearFechaHora } from "../Servicios/formatoFechaHora";
 import ConfirmacionTurno from "../Componentes/ConfirmacionTurno";
 import CalendarioTurnos from "../Componentes/CalendarioTurnos";
 import { guardarReservaPendiente, leerReservaPendiente, borrarReservaPendiente } from '../Servicios/reservaPendiente';
@@ -160,6 +160,16 @@ export default function EspecialidadTurnos() {
       setConfirmado(true);
     } catch (err) {
       setErrorReserva(err instanceof Error ? err.message : "No se pudo reservar el turno.");
+      const disponibles = await getDisponibilidadEspecialidad(idEspecialidad, fecha).catch(() => null);
+      if (disponibles) {
+        setSlots(disponibles);
+        if (!disponibles.some(s => s.fechaHoraTurno === horarioElegido && s.doctor.matricula === doctorElegido.matricula)) {
+          setDoctorElegido(null);
+          setHorarioElegido(null);
+          borrarReservaPendiente();
+          setError('El horario que elegiste ya no está disponible. Elegí otro horario.');
+        }
+      }
     } finally {
       setReservando(false);
     }
@@ -173,22 +183,22 @@ export default function EspecialidadTurnos() {
           Turnos disponibles
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Elegí un horario y después con qué doctor querés atenderte.
+          Elegí un día, un horario y después con qué doctor querés atenderte.
         </Typography>
         </EncabezadoPagina>
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "380px minmax(0, 1fr)" }, gap: 3 }}>
           <Box sx={{ minWidth: 0 }}>
-            <TituloSeccion icono={<CalendarMonthOutlined />}>Elegí una fecha</TituloSeccion>
+            <TituloSeccion icono={<CalendarMonthOutlined />}>1. Elegí una fecha</TituloSeccion>
             <CalendarioTurnos
               fecha={fecha}
-              onCambiarFecha={(nuevaFecha) => { borrarReservaPendiente(); setFecha(nuevaFecha); }}
+              onCambiarFecha={(nuevaFecha) => { if (nuevaFecha === fecha) return; borrarReservaPendiente(); setFecha(nuevaFecha); setHorarioElegido(null); setDoctorElegido(null); setLoading(true); }}
               fechasConTurnos={fechasConTurnos}
               onCambiarMes={cargarMesDisponible}
             />
           </Box>
           <Box sx={{ minWidth: 0, borderLeft: { md: 1 }, borderColor: { md: "divider" }, pl: { md: 3 } }}>
-            <TituloSeccion icono={<AccessTimeOutlined />}>Horarios disponibles</TituloSeccion>
+            <TituloSeccion icono={<AccessTimeOutlined />}>2. Elegí un horario</TituloSeccion>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {new Date(`${fecha}T00:00:00`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
             </Typography>
@@ -207,24 +217,7 @@ export default function EspecialidadTurnos() {
               <Alert severity="info">No hay turnos disponibles para esta fecha.</Alert>
             ) : (
               <Box>
-                <Box
-                  sx={{
-                    display: "grid",
-                    gridTemplateColumns: {
-                      xs: "repeat(3, 1fr)",
-                      sm: "repeat(4, 1fr)",
-                      md: "repeat(4, 1fr)",
-                    },
-                    gap: 1.5,
-                  }}
-                >
-                  {horarios.map(([horario, doctores]) => (
-                    <Button key={horario} variant={horarioElegido === horario ? "contained" : "outlined"} aria-pressed={horarioElegido === horario} sx={{ minHeight: 56 }} onClick={() => elegirHorario(horario)}>
-                      {formatearHora(horario)}
-                      {doctores.length > 1 ? ` (${doctores.length})` : ""}
-                    </Button>
-                  ))}
-                </Box>
+                <HorariosPorFranja key={fecha} horarios={horarios.map(([horario]) => horario)} onContinuar={elegirHorario} onSeleccionar={() => { setHorarioElegido(null); setDoctorElegido(null); }} />
                 {horarioElegido ? (
                   <Box component="section" aria-labelledby="doctores-disponibles" sx={{ mt: 3, borderTop: 1, borderColor: "divider", pt: 3 }}>
                     <TituloSeccion id="doctores-disponibles" icono={<PersonOutline />}>

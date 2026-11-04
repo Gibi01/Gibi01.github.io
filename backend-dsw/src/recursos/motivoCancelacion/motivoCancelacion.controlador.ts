@@ -1,3 +1,5 @@
+import { nombrePresentacion } from '../../shared/nombreCatalogo.js';
+import { guardarCatalogo } from '../../shared/guardarCatalogo.js';
 import { Request, Response, NextFunction } from 'express';
 import { MotivoCancelacion } from './motivoCancelacion.entidad.js';
 import { orm } from '../../shared/orm.js';
@@ -11,6 +13,7 @@ const CAMPOS_REQUERIDOS = ['descripcion'];
 
 function sanitizeMotivoCancelacionInput(req: Request, res: Response, next: NextFunction) {
   req.body.sanitizedInput = limpiarInput(req.body, CAMPOS);
+  if (req.body.sanitizedInput.descripcion !== undefined) req.body.sanitizedInput.descripcion = nombrePresentacion(req.body.sanitizedInput.descripcion);
   next();
 }
 
@@ -32,7 +35,7 @@ async function findOne(req: Request, res: Response) {
 
 async function add(req: Request, res: Response) {
   const motivo = em.create(MotivoCancelacion, req.body.sanitizedInput);
-  await em.flush();
+  await guardarCatalogo(em);
   res.status(201).json({ message: 'motivo de cancelación creado', data: motivo });
 }
 
@@ -40,7 +43,7 @@ async function update(req: Request, res: Response) {
   const id = parsearIdNumerico(req.params.id);
   const motivo = await em.findOneOrFail(MotivoCancelacion, { id });
   em.assign(motivo, req.body.sanitizedInput);
-  await em.flush();
+  await guardarCatalogo(em);
   res.status(200).json({ message: 'motivo de cancelación actualizado', data: motivo });
 }
 

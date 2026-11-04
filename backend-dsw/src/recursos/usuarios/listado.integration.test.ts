@@ -39,6 +39,50 @@ it('protege el listado y devuelve fecha de alta y estado sin credenciales', asyn
   expect(Object.keys(usuario).sort()).toEqual(['id','nombre','apellido','email','rol','activo','fechaAlta'].sort());
 });
 
+it('protege perfil e historial, pagina y separa reservas personales de la atención profesional', async () => {
+  const { Doctor } = await import('../../../dist/recursos/doctor/doctor.entidad.js');
+  const { Turno } = await import('../../../dist/recursos/turno/turno.entidad.js');
+  const em = orm.em.fork();
+  const usuario = await em.findOneOrFail(Usuario, { email });
+  const otro = em.create(Usuario, { authUserId: `historial-${Date.now()}`, nombre: 'Otro', apellido: 'Paciente', email: `otro.${email}`, rol: 'paciente', dni: '12345678' });
+  const matricula = 980000 + Math.floor(Math.random() * 5000);
+  const doctor = em.create(Doctor, { matricula, usuario, activo: false });
+  const otroDoctor = em.create(Doctor, { matricula: matricula + 10000, usuario: otro, activo: true });
+  const turnos = Array.from({ length: 12 }, (_, i) => em.create(Turno, { usuario, doctor: otroDoctor,
+    fechaHoraEmision: new Date(), fechaHoraTurno: new Date(`2030-01-${String(i + 1).padStart(2, '0')}T10:00:00-03:00`), duracionTurnoMinutos: 20, estado: i === 0 ? 'cancelado' : 'pendiente' }));
+  const atendido = em.create(Turno, { usuario: otro, doctor, fechaHoraEmision: new Date(), fechaHoraTurno: new Date('2030-01-02T14:00:00-03:00'), duracionTurnoMinutos: 30, estado: 'asistido' });
+  try {
+    await em.flush();
+    const base = `/api/usuarios/${usuario.id}`;
+    for (const ruta of ['perfil-admin', 'turnos-admin']) await request(app).get(`${base}/${ruta}`).expect(401);
+    const perfil = await request(app).get(`${base}/perfil-admin`).set('Cookie', cookie).expect(200);
+    expect(perfil.body.data).toMatchObject({ id: usuario.id, activo: false, doctor: { matricula, activo: false } });
+    expect(perfil.body.data).not.toHaveProperty('authUserId');
+    const historial = await request(app).get(`${base}/turnos-admin`).set('Cookie', cookie).expect(200);
+    expect(historial.body.data.total).toBe(12);
+    expect(historial.body.data.turnos).toHaveLength(10);
+    expect(historial.body.data.turnos.every((t: { usuarioId: number }) => t.usuarioId === usuario.id)).toBe(true);
+    const segunda = await request(app).get(`${base}/turnos-admin?pagina=1`).set('Cookie', cookie).expect(200);
+    expect(segunda.body.data.turnos).toHaveLength(2);
+    const profesional = await request(app).get(`${base}/turnos-admin?perspectiva=profesional`).set('Cookie', cookie).expect(200);
+    expect(profesional.body.data.turnos.map((t: { id: number }) => t.id)).toEqual([atendido.id]);
+    const cancelados = await request(app).get(`${base}/turnos-admin?estado=cancelado`).set('Cookie', cookie).expect(200);
+    expect(cancelados.body.data.total).toBe(1);
+    const calendario = await request(app).get(`${base}/turnos-admin?vista=calendario&desde=2030-01-01T00:00:00Z&hasta=2030-02-01T00:00:00Z`).set('Cookie', cookie).expect(200);
+    expect(calendario.body.data.turnos).toHaveLength(12);
+    await request(app).get(`${base}/turnos-admin?vista=calendario&desde=mal&hasta=mal`).set('Cookie', cookie).expect(400);
+    for (const rol of ['paciente', 'doctor']) {
+      await authPool.execute('UPDATE auth_user SET role = ? WHERE id = ?', [rol, usuario.authUserId]);
+      for (const ruta of ['perfil-admin', 'turnos-admin']) await request(app).get(`${base}/${ruta}`).set('Cookie', cookie).expect(403);
+    }
+  } finally {
+    await authPool.execute('UPDATE auth_user SET role = ? WHERE id = ?', ['admin', usuario.authUserId]);
+    await em.nativeDelete(Turno, { doctor: { matricula: { $in: [matricula, matricula + 10000] } } });
+    await em.nativeDelete(Doctor, { matricula: { $in: [matricula, matricula + 10000] } });
+    await em.nativeDelete(Usuario, { id: otro.id });
+  }
+});
+
 it('incluye médicos dados de baja', async () => {
   const { Doctor } = await import('../../../dist/recursos/doctor/doctor.entidad.js');
   const em = orm.em.fork();

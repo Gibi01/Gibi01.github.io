@@ -30,6 +30,9 @@ export class Turno {
   @Property()
   fechaHoraTurno!: Date;
 
+  @Property({ nullable: true })
+  duracionTurnoMinutos?: number;
+
   @Property()
   estado: EstadoTurno = 'pendiente';
 

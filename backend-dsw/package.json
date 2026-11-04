@@ -4,6 +4,7 @@
   "type": "module",
   "main": "app.js",
   "scripts": {
+    "db:calendario": "pnpm build && node dist/shared/preparar-calendario.js",
     "db:especialidades": "pnpm build && node dist/shared/cargar-especialidades.js",
     "db:iconos": "pnpm build && node dist/shared/agregar-iconos-especialidades.js",
     "build": "tsc -p ./tsconfig.json",
@@ -13,7 +14,8 @@
     "dev": "tsc-watch --noClear -p ./tsconfig.json --onSuccess \"node ./dist/app.js\"",
     "pretest": "pnpm run build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:catalogos": "pnpm build && node dist/shared/preparar-catalogos.js"
   },
   "author": "",
   "license": "ISC",

@@ -1,4 +1,5 @@
 import {
+  OptionalProps,
   Collection,
   Entity,
   ManyToMany,
@@ -11,6 +12,7 @@ import { Usuario } from '../usuarios/usuario.entidad.js';
 
 @Entity()
 export class Doctor {
+  [OptionalProps]?: 'versionAgenda';
 
   @PrimaryKey()
   matricula!: number;
@@ -29,4 +31,7 @@ export class Doctor {
   // fichas y disponibilidad para el paciente
   @Property()
   activo: boolean = true;
+
+  @Property({ default: 0 })
+  versionAgenda: number = 0;
 }

@@ -1,3 +1,4 @@
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Chip, CircularProgress, Container, MenuItem, Paper, Stack,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, TextField, Typography } from '@mui/material';
@@ -9,14 +10,16 @@ const normalizar = (valor: string) => valor.normalize('NFD').replace(/[\u0300-\u
 const fecha = (valor: string | null) => valor ? new Date(valor).toLocaleDateString('es-AR') : 'Sin registro';
 
 export default function AdminUsuarios() {
+  const [params, setParams] = useSearchParams();
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
   const [usuarios, setUsuarios] = useState<UsuarioListado[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(false);
-  const [busqueda, setBusqueda] = useState('');
-  const [rol, setRol] = useState('todos');
-  const [estado, setEstado] = useState('todos');
-  const [orden, setOrden] = useState('recientes');
-  const [pagina, setPagina] = useState(0);
+  const [busqueda, setBusqueda] = useState(params.get('buscar') ?? '');
+  const [rol, setRol] = useState(params.get('rol') ?? 'todos');
+  const [estado, setEstado] = useState(params.get('estado') ?? 'todos');
+  const [orden, setOrden] = useState(params.get('orden') ?? 'recientes');
+  const [pagina, setPagina] = useState(() => Math.max(0, Number(params.get('pagina')) || 0));
   const [intento, setIntento] = useState(0);
 
   useEffect(() => {
@@ -26,6 +29,20 @@ export default function AdminUsuarios() {
       .finally(() => { if (vigente) setCargando(false); });
     return () => { vigente = false; };
   }, [intento]);
+
+  useEffect(() => {
+    const query = new URLSearchParams();
+    if (busqueda) query.set('buscar', busqueda);
+    if (rol !== 'todos') query.set('rol', rol);
+    if (estado !== 'todos') query.set('estado', estado);
+    if (orden !== 'recientes') query.set('orden', orden);
+    if (pagina) query.set('pagina', String(pagina));
+    setParams(query, { replace: true });
+  }, [busqueda, rol, estado, orden, pagina, setParams]);
+  const acciones = (u: UsuarioListado) => <Stack spacing={1} direction={{ xs: 'column', md: 'row' }}>
+    <Button variant="outlined" component={RouterLink} to={`/admin/usuarios/${u.id}?tab=perfil`} state={{ busquedaUsuarios: params.size ? '?' + params.toString() : '' }}>Ver perfil</Button>
+    <Button variant="outlined" component={RouterLink} to={`/admin/usuarios/${u.id}?tab=turnos`} state={{ busquedaUsuarios: params.size ? '?' + params.toString() : '' }}>Historial de turnos</Button>
+  </Stack>;
 
   const visibles = usuarios.filter(u =>
     normalizar(`${u.nombre} ${u.apellido}`).includes(normalizar(busqueda)) &&
@@ -43,8 +60,9 @@ export default function AdminUsuarios() {
       <Typography color="text.secondary">Consultá los usuarios del sistema, incluidos los dados de baja.</Typography>
     </EncabezadoPagina>
     <Paper variant="outlined" sx={{ p: 2, my: 3 }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '2fr 1fr 1fr 1fr' }, gap: 2 }}>
-        <TextField label="Buscar por nombre o apellido" value={busqueda} onChange={e => cambiar(setBusqueda, e.target.value)} />
+      <TextField fullWidth label="Buscar por nombre o apellido" value={busqueda} onChange={e => cambiar(setBusqueda, e.target.value)} />
+      <Button variant="outlined" aria-expanded={mostrarFiltros} onClick={() => setMostrarFiltros(v => !v)} sx={{ display: { xs: 'inline-flex', md: 'none' }, mt: 2 }}>Filtros ({Number(rol !== 'todos') + Number(estado !== 'todos')})</Button>
+      <Box sx={{ display: { xs: mostrarFiltros ? 'grid' : 'none', md: 'grid' }, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2, mt: 2 }}>
         <TextField select label="Rol" value={rol} onChange={e => cambiar(setRol, e.target.value)}>
           <MenuItem value="todos">Todos los roles</MenuItem>
           {Object.entries(roles).map(([id, nombre]) => <MenuItem key={id} value={id}>{nombre}</MenuItem>)}
@@ -65,12 +83,12 @@ export default function AdminUsuarios() {
           {visibles.length === 0 ? <Alert severity="info">No se encontraron usuarios con estos filtros.</Alert> : <>
             <TableContainer component={Paper} variant="outlined" sx={{ display: { xs: 'none', md: 'block' } }}>
               <Table aria-label="Usuarios del sistema">
-                <TableHead><TableRow>{['Nombre y apellido', 'Email', 'Rol', 'Estado', 'Fecha de alta'].map(t => <TableCell key={t}>{t}</TableCell>)}</TableRow></TableHead>
+                <TableHead><TableRow>{['Nombre y apellido', 'Email', 'Rol', 'Estado', 'Fecha de alta', 'Acciones'].map(t => <TableCell key={t}>{t}</TableCell>)}</TableRow></TableHead>
                 <TableBody>{filas.map(u => <TableRow key={u.id}>
                   <TableCell component="th" scope="row">{u.nombre} {u.apellido}</TableCell>
                   <TableCell sx={{ overflowWrap: 'anywhere' }}>{u.email}</TableCell><TableCell>{roles[u.rol] ?? u.rol}</TableCell>
                   <TableCell><Chip size="small" label={u.activo ? 'Activo' : 'Dado de baja'} color={u.activo ? 'success' : 'default'} /></TableCell>
-                  <TableCell>{fecha(u.fechaAlta)}</TableCell>
+                  <TableCell>{fecha(u.fechaAlta)}</TableCell><TableCell>{acciones(u)}</TableCell>
                 </TableRow>)}</TableBody>
               </Table>
             </TableContainer>
@@ -80,6 +98,7 @@ export default function AdminUsuarios() {
                 <Typography color="text.secondary">{u.email}</Typography>
                 <Stack direction="row" spacing={1} sx={{ my: 1 }}><Chip size="small" label={roles[u.rol] ?? u.rol} /><Chip size="small" label={u.activo ? 'Activo' : 'Dado de baja'} color={u.activo ? 'success' : 'default'} /></Stack>
                 <Typography variant="body2">Fecha de alta: {fecha(u.fechaAlta)}</Typography>
+                <Box sx={{ mt: 2 }}>{acciones(u)}</Box>
               </Paper>)}
             </Stack>
             <TablePagination component="div" count={visibles.length} page={pagina} rowsPerPage={10} rowsPerPageOptions={[10]}

@@ -44,7 +44,7 @@ test('el admin crea y edita un icono que se refleja en la tarjeta pública', asy
   await page.getByRole('radio', { name: 'Cardiología', exact: true }).check();
   await page.screenshot({ path: testInfo.outputPath('admin-selector-icono.png'), fullPage: true });
   await page.getByRole('button', { name: 'Crear especialidad', exact: true }).click();
-  await expect(page.getByText('Especialidad creada.')).toBeVisible();
+  await expect(page.getByText('Se creó «Cardiología».')).toBeVisible();
   await page.goto('/especialidades');
   await expect(page.getByRole('button', { name: 'Cardiología' }).locator('[data-icono="corazon"]')).toBeVisible();
   await page.goto('/admin/modificar');

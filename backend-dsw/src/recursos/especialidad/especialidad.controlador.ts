@@ -1,3 +1,5 @@
+import { nombrePresentacion } from '../../shared/nombreCatalogo.js';
+import { guardarCatalogo } from '../../shared/guardarCatalogo.js';
 import { Request, Response, NextFunction } from 'express';
 import { Especialidad } from './especialidad.entidad.js';
 import { orm } from '../../shared/orm.js';
@@ -12,6 +14,7 @@ const CAMPOS_REQUERIDOS = ['descripcionEsp'];
 
 function sanitizeEspecialidadInput(req: Request, res: Response, next: NextFunction) {
   req.body.sanitizedInput = limpiarInput(req.body, CAMPOS);
+  if (req.body.sanitizedInput.descripcionEsp !== undefined) req.body.sanitizedInput.descripcionEsp = nombrePresentacion(req.body.sanitizedInput.descripcionEsp);
   validarIconoEspecialidad(req.body.sanitizedInput.icono);
   next();
 }
@@ -50,7 +53,7 @@ async function findOne(req: Request, res: Response) {
 
 async function add(req: Request, res: Response) {
   const especialidad = em.create(Especialidad, req.body.sanitizedInput);
-  await em.flush();
+  await guardarCatalogo(em);
   res.status(201).json({ message: 'especialidad creada', data: especialidad });
 }
 
@@ -58,7 +61,7 @@ async function update(req: Request, res: Response) {
   const idEspecialidad = parsearIdNumerico(req.params.id);
   const especialidad = await em.findOneOrFail(Especialidad, { idEspecialidad });
   em.assign(especialidad, req.body.sanitizedInput);
-  await em.flush();
+  await guardarCatalogo(em);
   res.status(200).json({ message: 'especialidad actualizada', data: especialidad });
 }
 

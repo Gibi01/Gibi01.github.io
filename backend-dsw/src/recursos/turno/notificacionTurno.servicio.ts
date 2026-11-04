@@ -27,7 +27,7 @@ function contenido(turno: Turno, tipo: TipoNotificacionTurno): { asunto: string;
     case 'no_asistido':
       return { asunto: 'Tu turno fue marcado como no asistido', texto: `Hola ${turno.usuario.nombre}: tu turno fue marcado como no asistido. ${detalle}` };
     case 'cancelado':
-      return { asunto: 'Confirmación de cancelación de turno', texto: `Hola ${turno.usuario.nombre}: tu turno fue cancelado. ${detalle}` };
+      return { asunto: 'Confirmación de cancelación de turno', texto: `Hola ${turno.usuario.nombre}: tu turno fue cancelado. ${detalle} Motivo: ${turno.motivoCancelacion || 'Cancelación solicitada'}.` };
   }
 }
 

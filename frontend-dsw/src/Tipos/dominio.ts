@@ -72,6 +72,7 @@ export interface Turno {
   obraSocial: ObraSocial | null;
   fechaHoraEmision: string;
   fechaHoraTurno: string;
+  duracionTurnoMinutos?: number | null;
   estado: EstadoTurno;
   fechaHoraCancelacion: string | null;
   motivoCancelacion: string | null;
@@ -95,3 +96,5 @@ export interface SlotEspecialidad {
   fechaHoraTurno: string;
   doctor: Doctor;
 }
+
+export const estadosTurno: Record<EstadoTurno, string> = { pendiente: 'Pendiente', cancelado: 'Cancelado', asistido: 'Asistido', no_asistido: 'No asistido' };
