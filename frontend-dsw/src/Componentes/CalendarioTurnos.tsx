@@ -1,6 +1,6 @@
 // src/Componentes/CalendarioTurnos.tsx
 // Los días disponibles tienen borde; los deshabilitados quedan atenuados.
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import { StaticDatePicker } from "@mui/x-date-pickers/StaticDatePicker";
 import { PickerDay, type PickerDayProps } from "@mui/x-date-pickers/PickerDay";
@@ -46,7 +46,8 @@ export default function CalendarioTurnos({
   onCambiarMes,
 }: Props) {
   const hoy = dayjs().startOf("day");
-  const valor = dayjs(fecha);
+  // MUI vuelve al mes seleccionado cuando cambia la referencia de value.
+  const valor = useMemo(() => dayjs(fecha), [fecha]);
 
   useEffect(() => {
     onCambiarMes(valor.year(), valor.month() + 1);
@@ -76,7 +77,10 @@ export default function CalendarioTurnos({
       slotProps={{ actionBar: { actions: [] } }}
     />
     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-      Con borde: disponible · Relleno: seleccionado
+      Con borde: disponible · Relleno: seleccionado · Gris: sin turnos
+    </Typography>
+    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+      Los horarios se muestran en el día en que comienza cada turno, aunque la atención continúe después de medianoche.
     </Typography>
     </Box>
   );

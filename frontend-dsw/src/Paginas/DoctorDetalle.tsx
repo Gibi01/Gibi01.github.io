@@ -1,3 +1,4 @@
+import HorariosPorFranja from '../Componentes/HorariosPorFranja';
 // src/Paginas/DoctorDetalle.tsx
 // pagina de detalle del doctor: info + horarios disponibles de la fecha elegida
 // se hace click en un horario, se confirma y listo, se reserva el turno
@@ -19,7 +20,6 @@ import {
   Stack,
   CircularProgress,
   Alert,
-  Button,
 } from "@mui/material";
 import PersonIcon from "@mui/icons-material/Person";
 import type { Doctor, ObraSocial } from "../Tipos/dominio";
@@ -31,7 +31,7 @@ import {
 } from "../Servicios/turnosService";
 import { getObrasSociales } from "../Servicios/obraSocialService";
 import { useAuth } from "../Contextos/AuthContext";
-import { formatearHora } from "../Servicios/formatoFechaHora";
+
 import ConfirmacionTurno from "../Componentes/ConfirmacionTurno";
 import CalendarioTurnos from "../Componentes/CalendarioTurnos";
 import { guardarReservaPendiente, leerReservaPendiente, borrarReservaPendiente } from '../Servicios/reservaPendiente';
@@ -152,6 +152,15 @@ export default function DoctorDetalle() {
       setConfirmado(true);
     } catch (err) {
       setErrorReserva(err instanceof Error ? err.message : "No se pudo reservar el turno.");
+      const disponibles = await getDisponibilidadDoctor(matriculaNum, fecha).catch(() => null);
+      if (disponibles) {
+        setSlots(disponibles);
+        if (!disponibles.includes(slotElegido)) {
+          setSlotElegido(null);
+          borrarReservaPendiente();
+          setErrorSlots('El horario que elegiste ya no está disponible. Elegí otro horario.');
+        }
+      }
     } finally {
       setReservando(false);
     }
@@ -204,21 +213,22 @@ export default function DoctorDetalle() {
 
       <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Turnos disponibles
+          Reservá tu turno
         </Typography>
 
+        <Typography color="text.secondary" sx={{ mb: 3 }}>Elegí un día y después un horario.</Typography>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "380px minmax(0, 1fr)" }, gap: 3 }}>
           <Box sx={{ minWidth: 0 }}>
-            <TituloSeccion icono={<CalendarMonthOutlined />}>Elegí una fecha</TituloSeccion>
+            <TituloSeccion icono={<CalendarMonthOutlined />}>1. Elegí una fecha</TituloSeccion>
             <CalendarioTurnos
               fecha={fecha}
-              onCambiarFecha={(nuevaFecha) => { borrarReservaPendiente(); setFecha(nuevaFecha); }}
+              onCambiarFecha={(nuevaFecha) => { if (nuevaFecha === fecha) return; borrarReservaPendiente(); setFecha(nuevaFecha); setSlotElegido(null); setLoadingSlots(true); }}
               fechasConTurnos={fechasConTurnos}
               onCambiarMes={cargarMesDisponible}
             />
           </Box>
           <Box sx={{ minWidth: 0, borderLeft: { md: 1 }, borderColor: { md: "divider" }, pl: { md: 3 } }}>
-            <TituloSeccion icono={<AccessTimeOutlined />}>Horarios disponibles</TituloSeccion>
+            <TituloSeccion icono={<AccessTimeOutlined />}>2. Elegí un horario</TituloSeccion>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {new Date(`${fecha}T00:00:00`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
             </Typography>
@@ -236,23 +246,7 @@ export default function DoctorDetalle() {
             ) : slots.length === 0 ? (
               <Alert severity="info">No hay horarios disponibles para esta fecha.</Alert>
             ) : (
-              <Box
-                sx={{
-                  display: "grid",
-                  gridTemplateColumns: {
-                    xs: "repeat(3, 1fr)",
-                    sm: "repeat(4, 1fr)",
-                    md: "repeat(4, 1fr)",
-                  },
-                  gap: 1.5,
-                }}
-              >
-                {slots.map((slot) => (
-                  <Button key={slot} variant="outlined" sx={{ minHeight: 56 }} onClick={() => elegirSlot(slot)}>
-                    {formatearHora(slot)}
-                  </Button>
-                ))}
-              </Box>
+              <HorariosPorFranja key={fecha} horarios={slots} onContinuar={elegirSlot} />
             )}
           </Box>
         </Box>

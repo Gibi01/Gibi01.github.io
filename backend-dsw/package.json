@@ -2,8 +2,12 @@
   "name": "tp-2026",
   "version": "1.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.18.0",
   "main": "app.js",
   "scripts": {
+    "start": "node dist/app.js",
+    "db:init-production": "node dist/shared/inicializar-produccion.js",
+    "db:calendario": "pnpm build && node dist/shared/preparar-calendario.js",
     "db:especialidades": "pnpm build && node dist/shared/cargar-especialidades.js",
     "db:iconos": "pnpm build && node dist/shared/agregar-iconos-especialidades.js",
     "build": "tsc -p ./tsconfig.json",
@@ -13,7 +17,8 @@
     "dev": "tsc-watch --noClear -p ./tsconfig.json --onSuccess \"node ./dist/app.js\"",
     "pretest": "pnpm run build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:catalogos": "pnpm build && node dist/shared/preparar-catalogos.js"
   },
   "author": "",
   "license": "ISC",

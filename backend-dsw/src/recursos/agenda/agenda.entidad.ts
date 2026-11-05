@@ -1,10 +1,11 @@
-import { Entity, PrimaryKey, Property, ManyToOne } from '@mikro-orm/core';
+import { Entity, PrimaryKey, Property, ManyToOne, OptionalProps } from '@mikro-orm/core';
 import { Doctor } from '../doctor/doctor.entidad.js';
 
 // bloque de disponibilidad semanal recurrente de un doctor. puede tener varios bloques
 // (ej lunes manana y lunes tarde con distinta duracion de turno)
 @Entity()
 export class Agenda {
+  [OptionalProps]?: 'terminaDiaSiguiente';
   @PrimaryKey()
   id!: number;
 
@@ -22,4 +23,7 @@ export class Agenda {
 
   @Property()
   duracionTurnoMinutos!: number;
+
+  @Property({ default: false })
+  terminaDiaSiguiente: boolean = false;
 }

@@ -43,6 +43,7 @@ for (const tipo of ['doctor', 'especialidad']) {
       const destino = tipo === 'doctor' ? '/doctores/1' : '/especialidades/1/turnos';
       await page.goto(destino);
       await page.getByRole('button', { name: '10:00', exact: true }).click();
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       if (tipo === 'especialidad') await page.getByRole('button', { name: /Dr\.\/Dra\. Ana Test/ }).click();
       await expect(page).toHaveURL(/\/registro$/);
       await page.getByRole('link', { name: 'Iniciá sesión', exact: true }).click();

@@ -9,7 +9,24 @@ import { orm } from '../../shared/orm.js';
 import { limpiarInput, validarCamposRequeridos, parsearIdNumerico } from '../../shared/validacion.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errores.js';
 
+import { LockMode, type EntityManager } from '@mikro-orm/core';
+import { Turno } from '../turno/turno.entidad.js';
+import { encolarNotificacion } from '../turno/notificacionTurno.servicio.js';
+import { bloquearDoctor } from '../agenda/agenda.servicio.js';
 const em = orm.em;
+
+async function darDeBaja(tx: EntityManager, doctor: Doctor) {
+  doctor.activo = false;
+  const turnos = await tx.find(Turno, { doctor, estado: 'pendiente', fechaHoraTurno: { $gte: new Date() } },
+    { populate: ['usuario', 'doctor.usuario'], lockMode: LockMode.PESSIMISTIC_WRITE, refresh: true });
+  for (const turno of turnos) {
+    turno.estado = 'cancelado';
+    turno.fechaHoraCancelacion = new Date();
+    turno.motivoCancelacion = 'Baja del profesional';
+    encolarNotificacion(tx, turno, 'cancelado');
+  }
+  return turnos.length;
+}
 
 // en el alta ademas de la matricula se cargan los datos de la cuenta (Usuario) del doctor
 const CAMPOS_ALTA = [
@@ -150,33 +167,30 @@ async function add(req: Request, res: Response) {
 
 async function update(req: Request, res: Response) {
   const matricula = parsearIdNumerico(req.params.matricula);
-  const doctor = await em.findOneOrFail(Doctor, { matricula }, { populate: ['usuario', 'especialidades'] });
-
-  const { especialidadIds, activo } = req.body.sanitizedInput as {
-    especialidadIds?: number[];
-    activo?: boolean;
-  };
-
-  if (Array.isArray(especialidadIds)) {
-    const especialidades = await em.find(Especialidad, { idEspecialidad: { $in: especialidadIds } });
-    doctor.especialidades.set(especialidades);
-  }
-  if (activo !== undefined) {
-    doctor.activo = Boolean(activo);
-  }
-
-  await em.flush();
-  res.status(200).json({ message: 'doctor actualizado', data: serializarDoctor(doctor) });
+  const data = await orm.em.fork().transactional(async tx => {
+    const doctor = await bloquearDoctor(tx, matricula);
+    await tx.populate(doctor, ['usuario', 'especialidades']);
+    const { especialidadIds, activo } = req.body.sanitizedInput;
+    if (activo !== undefined && typeof activo !== 'boolean') throw new BadRequestError('activo debe ser booleano');
+    if (especialidadIds !== undefined) {
+      if (!Array.isArray(especialidadIds) || especialidadIds.some(id => !Number.isInteger(id))) throw new BadRequestError('Especialidades inválidas');
+      const especialidades = await tx.find(Especialidad, { idEspecialidad: { $in: especialidadIds } });
+      if (especialidades.length !== new Set(especialidadIds).size) throw new BadRequestError('Alguna especialidad no existe');
+      doctor.especialidades.set(especialidades);
+    }
+    if (activo === false) await darDeBaja(tx, doctor);
+    if (activo === true) doctor.activo = true;
+    return serializarDoctor(doctor);
+  });
+  res.json({ message: 'doctor actualizado', data });
 }
 
 // DELETE /api/doctores/:matricula, es baja logica nomas, nunca se borra de la base
 // (ni el doctor ni sus turnos), solo deja de aparecer como opcion para reservar
 async function remove(req: Request, res: Response) {
   const matricula = parsearIdNumerico(req.params.matricula);
-  const doctor = await em.findOneOrFail(Doctor, { matricula });
-  doctor.activo = false;
-  await em.flush();
-  res.status(200).json({ message: 'doctor dado de baja' });
+  const cancelados = await orm.em.fork().transactional(async tx => darDeBaja(tx, await bloquearDoctor(tx, matricula)));
+  res.status(200).json({ message: 'doctor dado de baja; notificaciones encoladas', data: { cancelados } });
 }
 
 export {

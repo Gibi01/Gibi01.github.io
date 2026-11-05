@@ -17,10 +17,24 @@ import agendaRouter from './recursos/agenda/agenda.rutas.js';
 import obraSocialRouter from './recursos/obraSocial/obraSocial.rutas.js';
 import motivoCancelacionRouter from './recursos/motivoCancelacion/motivoCancelacion.rutas.js';
 import { iniciarTareaNoAsistidos } from './recursos/turno/turno.controlador.js';
-import { iniciarNotificacionesTurnos } from './recursos/turno/notificacionTurno.servicio.js';
+import { iniciarNotificacionesTurnos, despacharNotificacionesTurnos } from './recursos/turno/notificacionTurno.servicio.js';
 
 export const app = express();
 app.use(cors({ origin: config.auth.origin, credentials: true }));
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+app.get('/api/health', async (_req, res) => {
+  await orm.em.getConnection().execute('select 1');
+  res.set('Cache-Control', 'no-store').json({ status: 'ok' });
+});
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'test' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    res.once('finish', () => { void despacharNotificacionesTurnos(); });
+  }
+  next();
+});
 app.all('/api/auth/*splat', toNodeHandler(auth));
 // subimos el limite de 100kb a 5mb porque la foto de perfil viaja en base64 en el body
 app.use(express.json({ limit: '5mb' }));

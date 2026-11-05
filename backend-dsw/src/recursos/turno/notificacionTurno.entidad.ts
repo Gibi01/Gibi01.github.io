@@ -40,8 +40,9 @@ export class NotificacionTurno {
   @Property({ nullable: true })
   enviadaEn?: Date;
 
-  @Property({ nullable: true })
-  resendId?: string;
+  // Conserva la columna y el historial del proveedor anterior.
+  @Property({ nullable: true, fieldName: 'resend_id' })
+  proveedorId?: string;
 
   @Property({ nullable: true, columnType: 'text' })
   ultimoError?: string;

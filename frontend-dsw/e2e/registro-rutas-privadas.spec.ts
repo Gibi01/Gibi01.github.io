@@ -33,6 +33,7 @@ for (const tipo of ['doctor', 'especialidad']) {
     });
     await page.goto(tipo === 'doctor' ? '/doctores/1' : '/especialidades/1/turnos');
     await page.getByRole('button', { name: '10:00', exact: true }).click();
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
     if (tipo === 'especialidad') {
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(page.getByRole('button', { name: '10:00', exact: true })).toHaveAttribute('aria-pressed', 'true');

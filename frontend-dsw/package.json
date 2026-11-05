@@ -1,6 +1,7 @@
 {
   "name": "frontend-dsw",
   "private": true,
+  "packageManager": "pnpm@10.18.0",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -15,11 +16,18 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@fullcalendar/core": "^6.1.22",
+    "@fullcalendar/daygrid": "^6.1.22",
+    "@fullcalendar/interaction": "^6.1.22",
+    "@fullcalendar/luxon3": "^6.1.22",
+    "@fullcalendar/react": "^6.1.22",
+    "@fullcalendar/timegrid": "^6.1.22",
     "@mui/icons-material": "^9.2.0",
     "@mui/material": "^9.2.0",
     "@mui/x-date-pickers": "^9.13.0",
     "better-auth": "1.7.7",
     "dayjs": "^1.11.23",
+    "luxon": "^3.7.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.18.1"

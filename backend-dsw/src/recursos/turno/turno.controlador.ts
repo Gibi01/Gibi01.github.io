@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { LockMode } from '@mikro-orm/core';
+import { LockMode, type EntityManager } from '@mikro-orm/core';
 import { Turno } from './turno.entidad.js';
 import { Doctor } from '../doctor/doctor.entidad.js';
 import { resolverDoctorDelUsuario } from '../doctor/doctor.controlador.js';
@@ -13,6 +13,8 @@ import { limpiarInput, validarCamposRequeridos, parsearIdNumerico } from '../../
 import { BadRequestError, ForbiddenError, ConflictError, NotFoundError } from '../../shared/errores.js';
 import { encolarNotificacion } from './notificacionTurno.servicio.js';
 
+import { bloquearDoctor, recuperarDuraciones } from '../agenda/agenda.servicio.js';
+import { generarIntervalos, fechaLocal, seSuperponen, MINUTO } from '../agenda/horarios.js';
 const em = orm.em;
 
 const MINUTOS_CORTESIA_ASISTENCIA = 15;
@@ -48,21 +50,9 @@ function validarFecha(fecha: unknown): string {
 
 function rangoDelDia(fecha: string): { inicio: Date; fin: Date } {
   return {
-    inicio: new Date(`${fecha}T00:00:00`),
-    fin: new Date(`${fecha}T23:59:59`),
+    inicio: new Date(`${fecha}T00:00:00-03:00`),
+    fin: new Date(`${fecha}T23:59:59.999-03:00`),
   };
-}
-
-function minutosDesde(horaHHMM: string): number {
-  const [h, m] = horaHHMM.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function formatoFecha(d: Date): string {
-  const anio = d.getFullYear();
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
 }
 
 // datos publicos del doctor que se embeben en un turno
@@ -103,6 +93,7 @@ function serializarTurno(turno: Turno) {
     obraSocial: turno.obraSocial ? { id: turno.obraSocial.id, nombre: turno.obraSocial.nombre } : null,
     fechaHoraEmision: turno.fechaHoraEmision,
     fechaHoraTurno: turno.fechaHoraTurno,
+    duracionTurnoMinutos: turno.duracionTurnoMinutos ?? null,
     estado: turno.estado,
     fechaHoraCancelacion: turno.fechaHoraCancelacion ?? null,
     motivoCancelacion: turno.motivoCancelacion ?? null,
@@ -151,32 +142,18 @@ function iniciarTareaNoAsistidos(): void {
 // genera los horarios del doctor para una fecha en base a su Agenda real (los bloques
 // semanales que carga el admin/doctor), no una franja fija. si no hay bloque ese dia de la
 // semana, no hay horarios ese dia. Solo se ofrecen horarios presentes o futuros.
-async function generarSlotsDelDia(doctor: Doctor, fecha: string): Promise<Date[]> {
-  const [anio, mes, dia] = fecha.split('-').map(Number);
-  const diaSemana = new Date(anio, mes - 1, dia).getDay();
-
-  const bloques = await em.find(Agenda, { doctor, diaSemana });
-
-  const slots: Date[] = [];
-  for (const bloque of bloques) {
-    const inicioMinutos = minutosDesde(bloque.horaInicio);
-    const finMinutos = minutosDesde(bloque.horaFin);
-    for (let m = inicioMinutos; m < finMinutos; m += bloque.duracionTurnoMinutos) {
-      slots.push(new Date(anio, mes - 1, dia, Math.floor(m / 60), m % 60));
-    }
-  }
-  const ahora = Date.now();
-  return slots.filter((slot) => slot.getTime() >= ahora);
-}
-
-async function slotsOcupados(doctor: Doctor, fecha: string): Promise<Set<number>> {
-  const { inicio, fin } = rangoDelDia(fecha);
-  const turnosDelDia = await em.find(Turno, {
-    doctor,
-    estado: 'pendiente',
-    fechaHoraTurno: { $gte: inicio, $lte: fin },
-  });
-  return new Set(turnosDelDia.map((t) => t.fechaHoraTurno.getTime()));
+async function generarSlotsDelDia(doctor: Doctor, fecha: string, manager: EntityManager = em): Promise<Date[]> {
+  const bloques = await manager.find(Agenda, { doctor });
+  const slots = generarIntervalos(bloques, fecha).filter(s => +s.inicio >= Date.now());
+  const inicio = new Date(fecha + 'T00:00:00-03:00');
+  const fin = new Date(+inicio + 2 * 1440 * MINUTO);
+  const turnos = await manager.find(Turno, { doctor, estado: { $in: ['pendiente', 'asistido'] },
+    fechaHoraTurno: { $gte: new Date(+inicio - 1440 * MINUTO), $lt: fin } }, { refresh: true });
+  return slots.filter(s => !turnos.some(t => {
+    // Un histórico ambiguo bloquea conservadoramente hasta que se revise su duración.
+    const finTurno = +t.fechaHoraTurno + (t.duracionTurnoMinutos ?? 1440) * MINUTO;
+    return seSuperponen(+s.inicio, +s.fin, +t.fechaHoraTurno, finTurno);
+  })).map(s => s.inicio);
 }
 
 // GET /api/turnos/disponibilidad?doctorId=&fecha=YYYY-MM-DD
@@ -188,11 +165,8 @@ async function disponibilidadDoctor(req: Request, res: Response) {
     throw new NotFoundError('Doctor no encontrado');
   }
 
-  const [ocupados, slotsBase] = await Promise.all([
-    slotsOcupados(doctor, fecha),
-    generarSlotsDelDia(doctor, fecha),
-  ]);
-  const disponibles = slotsBase.filter((slot) => !ocupados.has(slot.getTime()));
+  const slotsBase = await generarSlotsDelDia(doctor, fecha);
+  const disponibles = slotsBase;
 
   res.status(200).json({ message: 'horarios disponibles', data: disponibles });
 }
@@ -213,12 +187,9 @@ async function disponibilidadEspecialidad(req: Request, res: Response) {
 
   for (const doctor of especialidad.doctores) {
     if (!doctor.activo) continue; // si esta dado de baja no se ofrece
-    const [ocupados, slotsBase] = await Promise.all([
-      slotsOcupados(doctor, fecha),
-      generarSlotsDelDia(doctor, fecha),
-    ]);
+    const slotsBase = await generarSlotsDelDia(doctor, fecha);
     for (const slot of slotsBase) {
-      if (!ocupados.has(slot.getTime())) {
+      {
         disponibles.push({ fechaHoraTurno: slot, doctor: doctorPublico(doctor) });
       }
     }
@@ -259,11 +230,8 @@ async function disponibilidadMesDoctor(req: Request, res: Response) {
 
   const fechasConDisponibilidad: string[] = [];
   for (const fecha of diasDelMes(anio, mes)) {
-    const [ocupados, slotsBase] = await Promise.all([
-      slotsOcupados(doctor, fecha),
-      generarSlotsDelDia(doctor, fecha),
-    ]);
-    if (slotsBase.some((slot) => !ocupados.has(slot.getTime()))) {
+    const slotsBase = await generarSlotsDelDia(doctor, fecha);
+    if (slotsBase.length > 0) {
       fechasConDisponibilidad.push(fecha);
     }
   }
@@ -283,11 +251,8 @@ async function disponibilidadMesEspecialidad(req: Request, res: Response) {
   for (const fecha of diasDelMes(anio, mes)) {
     let hayDisponibilidad = false;
     for (const doctor of doctoresActivos) {
-      const [ocupados, slotsBase] = await Promise.all([
-        slotsOcupados(doctor, fecha),
-        generarSlotsDelDia(doctor, fecha),
-      ]);
-      if (slotsBase.some((slot) => !ocupados.has(slot.getTime()))) {
+      const slotsBase = await generarSlotsDelDia(doctor, fecha);
+      if (slotsBase.length > 0) {
         hayDisponibilidad = true;
         break;
       }
@@ -317,42 +282,34 @@ async function add(req: Request, res: Response) {
     throw new BadRequestError('No se puede reservar un turno en el pasado');
   }
 
-  const doctor = await em.findOneOrFail(Doctor, { matricula }, { populate: ['usuario', 'especialidades'] });
-  if (!doctor.activo) {
-    throw new NotFoundError('Doctor no encontrado');
-  }
-  if (doctor.usuario.id === req.usuario!.id) {
-    throw new ForbiddenError('No podés reservar un turno con vos mismo');
-  }
-
-  const slotsDelDia = await generarSlotsDelDia(doctor, formatoFecha(fecha));
-  const esHorarioDeAgenda = slotsDelDia.some((slot) => slot.getTime() === fecha.getTime());
-  if (!esHorarioDeAgenda) {
-    throw new BadRequestError('Ese horario no corresponde a la agenda del doctor');
-  }
-
-  const ocupado = await em.findOne(Turno, { doctor, fechaHoraTurno: fecha, estado: 'pendiente' });
-  if (ocupado) {
-    throw new ConflictError('Ese horario ya no está disponible');
-  }
-
-  const usuario = await em.findOneOrFail(Usuario, { id: req.usuario!.id });
-  const obraSocial =
-    obraSocialId === undefined || obraSocialId === null
-      ? undefined
-      : await em.findOneOrFail(ObraSocial, { id: parsearIdNumerico(String(obraSocialId)) });
-
-  const turno = em.create(Turno, {
-    usuario,
-    doctor,
-    obraSocial,
-    fechaHoraEmision: new Date(),
-    fechaHoraTurno: fecha,
-    estado: 'pendiente',
+  const resultado = await orm.em.fork().transactional(async tx => {
+    const doctor = await bloquearDoctor(tx, matricula);
+    if (!doctor.activo) throw new NotFoundError('Doctor no encontrado');
+    await tx.populate(doctor, ['usuario', 'especialidades']);
+    if (doctor.usuario.id === req.usuario!.id) throw new ForbiddenError('No podés reservar un turno con vos mismo');
+    await recuperarDuraciones(tx, doctor);
+    await tx.flush();
+    const bloques = await tx.find(Agenda, { doctor });
+    const slot = generarIntervalos(bloques, fechaLocal(fecha)).find(s => +s.inicio === +fecha);
+    if (!slot) throw new BadRequestError('Ese horario no corresponde a la agenda del doctor');
+    const disponibles = await generarSlotsDelDia(doctor, fechaLocal(fecha), tx);
+    if (!disponibles.some(s => +s === +fecha)) throw new ConflictError('Ese horario acaba de reservarse o ya no está disponible');
+    const usuario = await tx.findOneOrFail(Usuario, { id: req.usuario!.id });
+    const obraSocial = obraSocialId == null ? undefined : await tx.findOneOrFail(ObraSocial, { id: parsearIdNumerico(String(obraSocialId)) });
+    const turno = tx.create(Turno, { usuario, doctor, obraSocial, fechaHoraEmision: new Date(), fechaHoraTurno: fecha,
+      duracionTurnoMinutos: slot.duracion, estado: 'pendiente' });
+    await tx.flush();
+    return serializarTurno(turno);
   });
+  res.status(201).json({ message: 'turno reservado', data: resultado });
+}
 
-  await em.flush();
-  res.status(201).json({ message: 'turno reservado', data: serializarTurno(turno) });
+function aplicarRango(req: Request, filtro: Record<string, unknown>) {
+  if (req.query.desde || req.query.hasta) {
+    const desde = new Date(String(req.query.desde)), hasta = new Date(String(req.query.hasta));
+    if (!Number.isFinite(+desde) || !Number.isFinite(+hasta) || +hasta <= +desde || +hasta - +desde > 100 * 86400000) throw new BadRequestError('Rango inválido (máximo 100 días)');
+    filtro.fechaHoraTurno = { $gte: new Date(+desde - 86400000), $lt: hasta };
+  }
 }
 
 // GET /api/turnos/mios?fecha=&especialidadId=&doctorId=, historico del usuario logueado
@@ -360,6 +317,7 @@ async function misTurnos(req: Request, res: Response) {
   await marcarNoAsistidosVencidos();
 
   const filtro: Record<string, unknown> = { usuario: req.usuario!.id };
+  aplicarRango(req, filtro);
 
   if (req.query.fecha) {
     const fecha = validarFecha(req.query.fecha);
@@ -387,6 +345,7 @@ async function turnosQueAtiendo(req: Request, res: Response) {
 
   const doctor = await resolverDoctorDelUsuario(req.usuario!.id);
   const filtro: Record<string, unknown> = { doctor: doctor.matricula };
+  aplicarRango(req, filtro);
   if (req.query.estado) {
     filtro.estado = req.query.estado;
   }
@@ -413,7 +372,7 @@ async function findOne(req: Request, res: Response) {
     throw new ForbiddenError('No podés ver un turno que no es tuyo');
   }
 
-  res.status(200).json({ message: 'turno encontrado', data: serializarTurno(turno) });
+  res.status(200).json({ message: 'turno encontrado', data: esDoctorDelTurno ? serializarTurnoParaDoctor(await em.populate(turno, ['usuario'])) : serializarTurno(turno) });
 }
 
 // PATCH /api/turnos/:id/cancelar, tanto el texto libre como el motivo preestablecido
@@ -421,36 +380,42 @@ async function findOne(req: Request, res: Response) {
 async function cancelar(req: Request, res: Response) {
   const id = parsearIdNumerico(req.params.id);
   // El usuario se carga para preparar el correo; la respuesta sigue usando serializarTurno.
-  const turno = await em.findOneOrFail(Turno, { id }, { populate: ['usuario', 'doctor', 'doctor.usuario', 'doctor.especialidades', 'obraSocial', 'motivoCancelacionPreestablecido'] });
+  const data = await orm.em.fork().transactional(async tx => {
+    const referencia = await tx.findOneOrFail(Turno, { id });
+    await bloquearDoctor(tx, referencia.doctor.matricula);
+    const turno = await tx.findOneOrFail(Turno, { id }, { lockMode: LockMode.PESSIMISTIC_WRITE, refresh: true, populate: ['usuario', 'doctor', 'doctor.usuario', 'doctor.especialidades', 'obraSocial', 'motivoCancelacionPreestablecido'] });
 
-  if (req.usuario?.rol !== 'admin' && turno.usuario.id !== req.usuario?.id) {
-    throw new ForbiddenError('No podés cancelar un turno que no es tuyo');
-  }
-  if (turno.estado !== 'pendiente') {
-    throw new ConflictError('Solo se puede cancelar un turno pendiente');
-  }
+    if (req.usuario?.rol !== 'admin' && turno.usuario.id !== req.usuario?.id) {
+      throw new ForbiddenError('No podés cancelar un turno que no es tuyo');
+    }
+    if (turno.estado !== 'pendiente') {
+      throw new ConflictError('Solo se puede cancelar un turno pendiente');
+    }
 
-  const { motivoCancelacion, motivoCancelacionPreestablecidoId } = req.body.sanitizedInput as {
-    motivoCancelacion?: string;
-    motivoCancelacionPreestablecidoId?: unknown;
-  };
+    if (turno.fechaHoraTurno <= new Date()) throw new ConflictError('No se puede cancelar un turno pasado');
+    const { motivoCancelacion, motivoCancelacionPreestablecidoId } = req.body.sanitizedInput as {
+      motivoCancelacion?: string;
+      motivoCancelacionPreestablecidoId?: unknown;
+    };
 
-  turno.estado = 'cancelado';
-  turno.fechaHoraCancelacion = new Date();
-  if (motivoCancelacion) {
-    turno.motivoCancelacion = motivoCancelacion;
-  }
-  if (motivoCancelacionPreestablecidoId !== undefined) {
-    const idMotivo = parsearIdNumerico(String(motivoCancelacionPreestablecidoId));
-    turno.motivoCancelacionPreestablecido = await em.findOneOrFail(MotivoCancelacion, { id: idMotivo });
-  }
+    turno.estado = 'cancelado';
+    turno.fechaHoraCancelacion = new Date();
+    if (motivoCancelacion) {
+      turno.motivoCancelacion = motivoCancelacion;
+    }
+    if (motivoCancelacionPreestablecidoId !== undefined) {
+      const idMotivo = parsearIdNumerico(String(motivoCancelacionPreestablecidoId));
+      turno.motivoCancelacionPreestablecido = await tx.findOneOrFail(MotivoCancelacion, { id: idMotivo });
+    }
 
-  if (req.usuario?.id === turno.usuario.id) {
-    encolarNotificacion(em, turno, 'cancelado');
-  }
+    if (req.usuario?.id === turno.usuario.id) {
+      encolarNotificacion(tx, turno, 'cancelado');
+    }
 
-  await em.flush();
-  res.status(200).json({ message: 'turno cancelado', data: serializarTurno(turno) });
+    await tx.flush();
+    return serializarTurno(turno);
+  });
+  res.status(200).json({ data });
 }
 
 async function verificarDoctorDelTurno(req: Request, turno: Turno): Promise<void> {
@@ -463,43 +428,54 @@ async function verificarDoctorDelTurno(req: Request, turno: Turno): Promise<void
 // PATCH /api/turnos/:id/asistio, el doctor confirma que el paciente se presento
 async function marcarAsistido(req: Request, res: Response) {
   const id = parsearIdNumerico(req.params.id);
-  const turno = await em.findOneOrFail(Turno, { id }, { populate: ['doctor', 'doctor.usuario', 'doctor.especialidades', 'usuario'] });
-  await verificarDoctorDelTurno(req, turno);
+  const data = await orm.em.fork().transactional(async tx => {
+    const referencia = await tx.findOneOrFail(Turno, { id });
+    await bloquearDoctor(tx, referencia.doctor.matricula);
+    const turno = await tx.findOneOrFail(Turno, { id }, { lockMode: LockMode.PESSIMISTIC_WRITE, refresh: true, populate: ['doctor', 'doctor.usuario', 'doctor.especialidades', 'usuario'] });
+    await verificarDoctorDelTurno(req, turno);
 
-  if (turno.estado !== 'pendiente') {
-    throw new ConflictError('Solo se puede marcar como asistido un turno pendiente');
-  }
+    if (turno.estado !== 'pendiente') {
+      throw new ConflictError('Solo se puede marcar como asistido un turno pendiente');
+    }
 
-  const ahora = new Date();
-  const limiteAsistencia = new Date(
-    turno.fechaHoraTurno.getTime() + MINUTOS_CORTESIA_ASISTENCIA * 60 * 1000
-  );
-  if (ahora < turno.fechaHoraTurno || ahora > limiteAsistencia) {
-    throw new ConflictError(
-      'Solo se puede marcar asistencia desde el horario del turno y durante los 15 minutos posteriores'
+    const ahora = new Date();
+    const limiteAsistencia = new Date(
+      turno.fechaHoraTurno.getTime() + MINUTOS_CORTESIA_ASISTENCIA * 60 * 1000
     );
-  }
+    if (ahora < turno.fechaHoraTurno || ahora > limiteAsistencia) {
+      throw new ConflictError(
+        'Solo se puede marcar asistencia desde el horario del turno y durante los 15 minutos posteriores'
+      );
+    }
 
-  turno.estado = 'asistido';
-  encolarNotificacion(em, turno, 'asistido');
-  await em.flush();
-  res.status(200).json({ message: 'turno marcado como asistido', data: serializarTurnoParaDoctor(turno) });
+    turno.estado = 'asistido';
+    encolarNotificacion(tx, turno, 'asistido');
+    await tx.flush();
+    return serializarTurnoParaDoctor(turno);
+  });
+  res.status(200).json({ data });
 }
 
 // PATCH /api/turnos/:id/no-asistio, el doctor marca a mano que el paciente no se presento
 async function marcarNoAsistido(req: Request, res: Response) {
   const id = parsearIdNumerico(req.params.id);
-  const turno = await em.findOneOrFail(Turno, { id }, { populate: ['doctor', 'doctor.usuario', 'doctor.especialidades', 'usuario'] });
-  await verificarDoctorDelTurno(req, turno);
+  const data = await orm.em.fork().transactional(async tx => {
+    const referencia = await tx.findOneOrFail(Turno, { id });
+    await bloquearDoctor(tx, referencia.doctor.matricula);
+    const turno = await tx.findOneOrFail(Turno, { id }, { lockMode: LockMode.PESSIMISTIC_WRITE, refresh: true, populate: ['doctor', 'doctor.usuario', 'doctor.especialidades', 'usuario'] });
+    await verificarDoctorDelTurno(req, turno);
 
-  if (turno.estado !== 'pendiente') {
-    throw new ConflictError('Solo se puede marcar como no asistido un turno pendiente');
-  }
+    if (turno.estado !== 'pendiente') {
+      throw new ConflictError('Solo se puede marcar como no asistido un turno pendiente');
+    }
 
-  turno.estado = 'no_asistido';
-  encolarNotificacion(em, turno, 'no_asistido');
-  await em.flush();
-  res.status(200).json({ message: 'turno marcado como no asistido', data: serializarTurnoParaDoctor(turno) });
+    if (turno.fechaHoraTurno > new Date()) throw new ConflictError('No se puede marcar inasistencia antes del turno');
+    turno.estado = 'no_asistido';
+    encolarNotificacion(tx, turno, 'no_asistido');
+    await tx.flush();
+    return serializarTurnoParaDoctor(turno);
+  });
+  res.status(200).json({ data });
 }
 
 export {

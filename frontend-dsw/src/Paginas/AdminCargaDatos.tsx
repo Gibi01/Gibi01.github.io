@@ -1,3 +1,5 @@
+import AltaCatalogo from '../Componentes/AltaCatalogo';
+import { Link as RouterLink } from 'react-router-dom';
 import EncabezadoPagina from '../Componentes/EncabezadoPagina';
 // src/Paginas/AdminCargaDatos.tsx
 // pagina de admin para el alta de especialidades, doctores y agendas
@@ -16,34 +18,19 @@ import {
   Alert,
   CircularProgress,
   MenuItem,
-  Stack,
 } from "@mui/material";
-import type { Doctor, Especialidad } from "../Tipos/dominio";
-import SelectorIconoEspecialidad from '../Componentes/SelectorIconoEspecialidad';
-import { getEspecialidades, crearEspecialidad } from "../Servicios/especialidadesService";
-import { getDoctores, crearDoctor } from "../Servicios/doctoresService";
-import { crearAgenda } from "../Servicios/agendaService";
-import { crearObraSocial } from "../Servicios/obraSocialService";
-import { crearMotivoCancelacion } from "../Servicios/motivoCancelacionService";
+import type { Especialidad } from "../Tipos/dominio";
 
-const DIAS_SEMANA = [
-  { value: 0, label: "Domingo" },
-  { value: 1, label: "Lunes" },
-  { value: 2, label: "Martes" },
-  { value: 3, label: "Miércoles" },
-  { value: 4, label: "Jueves" },
-  { value: 5, label: "Viernes" },
-  { value: 6, label: "Sábado" },
-];
+import { getEspecialidades } from "../Servicios/especialidadesService";
+import { crearDoctor } from "../Servicios/doctoresService";
+
 
 export default function AdminCargaDatos() {
   const [tab, setTab] = useState(0);
   const [especialidades, setEspecialidades] = useState<Especialidad[]>([]);
-  const [doctores, setDoctores] = useState<Doctor[]>([]);
 
   const cargarListas = () => {
     getEspecialidades().then(setEspecialidades).catch(() => {});
-    getDoctores().then(setDoctores).catch(() => {});
   };
 
   useEffect(() => {
@@ -51,7 +38,7 @@ export default function AdminCargaDatos() {
   }, []);
 
   return (
-    <Container maxWidth="sm" sx={{ py: 4 }}>
+    <Container maxWidth={tab === 0 || tab === 3 || tab === 4 ? "lg" : "sm"} sx={{ py: 4 }}>
       <Paper variant="outlined">
         <Box sx={{ p: 3, pb: 0 }}>
         <EncabezadoPagina>
@@ -71,70 +58,14 @@ export default function AdminCargaDatos() {
           <Tab label="Motivo de cancelación" />
         </Tabs>
         <Box sx={{ p: 3 }}>
-          {tab === 0 && <FormEspecialidad onCreada={cargarListas} />}
+          {tab === 0 && <AltaCatalogo key="especialidad" tipo="especialidad" onCreado={cargarListas} />}
           {tab === 1 && <FormDoctor especialidades={especialidades} onCreado={cargarListas} />}
-          {tab === 2 && <FormAgenda doctores={doctores} onCreada={cargarListas} />}
-          {tab === 3 && <FormObraSocial />}
-          {tab === 4 && <FormMotivoCancelacion />}
+          {tab === 2 && <Button component={RouterLink} to="/admin/agendas" variant="contained">Abrir editor de agendas</Button>}
+          {tab === 3 && <AltaCatalogo key="obraSocial" tipo="obraSocial" onCreado={cargarListas} />}
+          {tab === 4 && <AltaCatalogo key="motivo" tipo="motivo" onCreado={cargarListas} />}
         </Box>
       </Paper>
     </Container>
-  );
-}
-
-function FormEspecialidad({ onCreada }: { onCreada: () => void }) {
-  const [descripcionEsp, setDescripcionEsp] = useState("");
-  const [icono, setIcono] = useState('medicina');
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setOk(false);
-    if (!descripcionEsp.trim()) {
-      setError("Completá la descripción.");
-      return;
-    }
-    setGuardando(true);
-    try {
-      await crearEspecialidad({ descripcionEsp: descripcionEsp.trim(), icono });
-      setDescripcionEsp("");
-      setIcono('medicina');
-      setOk(true);
-      onCreada();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo crear la especialidad.");
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  return (
-    <Box component="form" onSubmit={handleSubmit} noValidate>
-      {ok && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          Especialidad creada.
-        </Alert>
-      )}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      <TextField
-        fullWidth
-        margin="normal"
-        label="Descripción"
-        value={descripcionEsp}
-        onChange={(e) => setDescripcionEsp(e.target.value)}
-      />
-      <SelectorIconoEspecialidad valor={icono} onChange={setIcono} nombre={descripcionEsp} disabled={guardando} />
-      <Button type="submit" variant="contained" fullWidth sx={{ mt: 2 }} disabled={guardando}>
-        {guardando ? <CircularProgress size={24} color="inherit" /> : "Crear especialidad"}
-      </Button>
-    </Box>
   );
 }
 
@@ -265,221 +196,6 @@ function FormDoctor({
       </TextField>
       <Button type="submit" variant="contained" fullWidth sx={{ mt: 2 }} disabled={guardando}>
         {guardando ? <CircularProgress size={24} color="inherit" /> : "Crear doctor"}
-      </Button>
-    </Box>
-  );
-}
-
-function FormAgenda({ doctores, onCreada }: { doctores: Doctor[]; onCreada: () => void }) {
-  const [doctorId, setDoctorId] = useState("");
-  const [diaSemana, setDiaSemana] = useState("");
-  const [horaInicio, setHoraInicio] = useState("");
-  const [horaFin, setHoraFin] = useState("");
-  const [duracionTurnoMinutos, setDuracionTurnoMinutos] = useState("30");
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setOk(false);
-    if (!doctorId || diaSemana === "" || !horaInicio || !horaFin || !duracionTurnoMinutos) {
-      setError("Completá todos los campos.");
-      return;
-    }
-    setGuardando(true);
-    try {
-      await crearAgenda({
-        doctorId: Number(doctorId),
-        diaSemana: Number(diaSemana),
-        horaInicio,
-        horaFin,
-        duracionTurnoMinutos: Number(duracionTurnoMinutos),
-      });
-      setOk(true);
-      onCreada();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo crear la agenda.");
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  return (
-    <Box component="form" onSubmit={handleSubmit} noValidate>
-      {ok && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          Agenda creada.
-        </Alert>
-      )}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      <TextField
-        fullWidth
-        select
-        margin="normal"
-        label="Doctor"
-        value={doctorId}
-        onChange={(e) => setDoctorId(e.target.value)}
-      >
-        {doctores.map((d) => (
-          <MenuItem key={d.matricula} value={d.matricula}>
-            Dr./Dra. {d.nombre} {d.apellido} (matrícula {d.matricula})
-          </MenuItem>
-        ))}
-      </TextField>
-      <TextField
-        fullWidth
-        select
-        margin="normal"
-        label="Día de la semana"
-        value={diaSemana}
-        onChange={(e) => setDiaSemana(e.target.value)}
-      >
-        {DIAS_SEMANA.map((d) => (
-          <MenuItem key={d.value} value={d.value}>
-            {d.label}
-          </MenuItem>
-        ))}
-      </TextField>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-        <TextField
-          fullWidth
-          margin="normal"
-          type="time"
-          label="Hora inicio"
-          value={horaInicio}
-          onChange={(e) => setHoraInicio(e.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }}
-        />
-        <TextField
-          fullWidth
-          margin="normal"
-          type="time"
-          label="Hora fin"
-          value={horaFin}
-          onChange={(e) => setHoraFin(e.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }}
-        />
-      </Stack>
-      <TextField
-        fullWidth
-        margin="normal"
-        type="number"
-        label="Duración de cada turno (minutos)"
-        value={duracionTurnoMinutos}
-        onChange={(e) => setDuracionTurnoMinutos(e.target.value)}
-      />
-      <Button type="submit" variant="contained" fullWidth sx={{ mt: 2 }} disabled={guardando}>
-        {guardando ? <CircularProgress size={24} color="inherit" /> : "Crear agenda"}
-      </Button>
-    </Box>
-  );
-}
-
-function FormObraSocial() {
-  const [nombre, setNombre] = useState("");
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setOk(false);
-    if (!nombre.trim()) {
-      setError("Completá el nombre.");
-      return;
-    }
-    setGuardando(true);
-    try {
-      await crearObraSocial({ nombre: nombre.trim() });
-      setNombre("");
-      setOk(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo crear la obra social.");
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  return (
-    <Box component="form" onSubmit={handleSubmit} noValidate>
-      {ok && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          Obra social creada.
-        </Alert>
-      )}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      <TextField
-        fullWidth
-        margin="normal"
-        label="Nombre"
-        value={nombre}
-        onChange={(e) => setNombre(e.target.value)}
-      />
-      <Button type="submit" variant="contained" fullWidth sx={{ mt: 2 }} disabled={guardando}>
-        {guardando ? <CircularProgress size={24} color="inherit" /> : "Crear obra social"}
-      </Button>
-    </Box>
-  );
-}
-
-function FormMotivoCancelacion() {
-  const [descripcion, setDescripcion] = useState("");
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setOk(false);
-    if (!descripcion.trim()) {
-      setError("Completá la descripción.");
-      return;
-    }
-    setGuardando(true);
-    try {
-      await crearMotivoCancelacion({ descripcion: descripcion.trim() });
-      setDescripcion("");
-      setOk(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo crear el motivo.");
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  return (
-    <Box component="form" onSubmit={handleSubmit} noValidate>
-      {ok && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          Motivo de cancelación creado.
-        </Alert>
-      )}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      <TextField
-        fullWidth
-        margin="normal"
-        label="Descripción"
-        value={descripcion}
-        onChange={(e) => setDescripcion(e.target.value)}
-      />
-      <Button type="submit" variant="contained" fullWidth sx={{ mt: 2 }} disabled={guardando}>
-        {guardando ? <CircularProgress size={24} color="inherit" /> : "Crear motivo"}
       </Button>
     </Box>
   );

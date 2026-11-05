@@ -1,3 +1,5 @@
+import AdminUsuarioDetalle from './Paginas/AdminUsuarioDetalle';
+import AdminAgendas from './Paginas/AdminAgendas';
 import { Routes, Route } from "react-router-dom";
 
 import Inicio from "./Paginas/Inicio";
@@ -22,6 +24,8 @@ import RutaDoctor from "./Componentes/RutaDoctor";
 function App() {
   return (
     <Routes>
+      <Route path="/admin/agendas" element={<RutaAdmin><AdminAgendas /></RutaAdmin>} />
+      <Route path="/admin/usuarios/:id" element={<RutaAdmin><AdminUsuarioDetalle /></RutaAdmin>} />
       <Route path="/admin/usuarios" element={<RutaAdmin><AdminUsuarios /></RutaAdmin>} />
       <Route path="/" element={<Inicio />} />
       <Route path="/reserva" element={<Especialidades />} />

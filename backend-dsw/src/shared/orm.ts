@@ -14,6 +14,8 @@ export const orm = await MikroORM.init({
   port: config.db.port,
   user: config.db.user,
   password: config.db.password,
+  driverOptions: { connection: { ssl: config.db.ssl } },
+  pool: { min: 0, max: 5 },
   highlighter: new SqlHighlighter(),
   debug: process.env.ORM_DEBUG === 'true',
   schemaGenerator: {

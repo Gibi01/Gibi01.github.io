@@ -15,7 +15,7 @@ import type { Especialidad } from '../Tipos/dominio';
 
 const DIRECCION = 'Silent Hill, Estados Unidos';
 // Número ficticio para la demostración; no habilitar llamadas reales.
-const TELEFONO = '011-0000-0000';
+const TELEFONO = 'bebetón (555) 555-5555';
 const pasos = [
   ['Elegí una especialidad', 'Buscá la especialidad o el profesional con quien querés atenderte.'],
   ['Seleccioná fecha y horario', 'Elegí entre los turnos disponibles el que te resulte más cómodo.'],
@@ -29,7 +29,7 @@ export default function Inicio() {
   const [error, setError] = useState(false);
   useEffect(() => {
     let vigente = true;
-    getEspecialidades(true).then(datos => { if (vigente) setEspecialidades(datos); })
+    getEspecialidades(true).then(datos => { if (vigente) setEspecialidades(datos); }) 
       .catch(() => { if (vigente) setError(true); })
       .finally(() => { if (vigente) setCargando(false); });
     return () => { vigente = false; };
@@ -81,7 +81,7 @@ export default function Inicio() {
         <Typography id="inicio-contacto" component="h2" variant="h4" sx={{ mb: 2.5 }}>¿Necesitás ayuda?</Typography>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
           <Card variant="outlined"><CardActionArea onClick={() => setContactoAbierto(true)} sx={{ p: 3, display: 'flex', justifyContent: 'flex-start', gap: 2 }}>
-            <PhoneOutlined color="primary" sx={{ fontSize: 36 }} /><Box><Typography component="h3" variant="h6">Consultar por teléfono</Typography><Typography color="text.secondary">{TELEFONO} · Número de ejemplo</Typography></Box>
+            <PhoneOutlined color="primary" sx={{ fontSize: 36 }} /><Box><Typography component="h3" variant="h6">Consultar por teléfono</Typography><Typography color="text.secondary">{TELEFONO} </Typography></Box>
           </CardActionArea></Card>
           <Card variant="outlined"><CardActionArea component="a" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(DIRECCION)}`} target="_blank" rel="noopener noreferrer" aria-label={`Cómo llegar a ${DIRECCION} (abre en otra pestaña)`} sx={{ p: 3, display: 'flex', justifyContent: 'flex-start', gap: 2 }}>
             <PlaceOutlined color="primary" sx={{ fontSize: 36 }} /><Box><Typography component="h3" variant="h6">Cómo llegar</Typography><Typography color="text.secondary">{DIRECCION}</Typography></Box>

@@ -252,7 +252,7 @@ describe('Doctor como usuario + estados de turno', () => {
     expect(resRegistro.body.data.rol).toBe('paciente');
 
     expect(resRegistro.headers['set-cookie'][0]).toContain('HttpOnly');
-    expect(resRegistro.headers['set-cookie'][0]).toContain('Max-Age=86400');
+    expect(resRegistro.headers['set-cookie'][0]).toContain(`Max-Age=${auth.options.session.expiresIn}`);
     cookiePaciente = resRegistro.headers['set-cookie'][0].split(';')[0];
     const perfil = await request(app).get('/api/usuarios/me').set('Cookie', cookiePaciente);
     expect(perfil.status).toBe(200);
@@ -426,7 +426,7 @@ describe('Doctor como usuario + estados de turno', () => {
     expect(antes.status).toBe(200);
     const [filas] = await authPool.execute('SELECT expiresAt, createdAt FROM auth_session WHERE userId = ?', [usuario.authUserId]);
     const sesion = (filas as any[])[0];
-    expect(new Date(sesion.expiresAt).getTime() - new Date(sesion.createdAt).getTime()).toBe(86400000);
+    expect(new Date(sesion.expiresAt).getTime() - new Date(sesion.createdAt).getTime()).toBe(auth.options.session.expiresIn * 1000);
     await authPool.execute('UPDATE auth_session SET expiresAt = ? WHERE userId = ?', [new Date(Date.now() - 60000), usuario.authUserId]);
     expect((await request(app).get('/api/usuarios/me').set('Cookie', cookiePaciente)).status).toBe(401);
     const ingreso = await request(app).post('/api/auth/sign-in/email').send({ email: EMAIL_PACIENTE, password: '12345678' });
