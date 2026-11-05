@@ -12,6 +12,7 @@ import { Turno } from '../recursos/turno/turno.entidad.js';
 export const authPool = createPool({
   host: config.db.host, port: config.db.port, database: config.db.name,
   user: config.db.user, password: config.db.password, timezone: 'Z',
+  ssl: config.db.ssl, connectionLimit: 5,
 });
 
 async function validarEliminacion(authUserId: string): Promise<void> {
@@ -38,7 +39,7 @@ export const auth = betterAuth({
     },
   },
   session: {
-    modelName: 'auth_session', expiresIn: 60 * 60  , //una hora
+    modelName: 'auth_session', expiresIn: 60 * 60 * 24 , //un día
     disableSessionRefresh: true, cookieCache: { enabled: false },
   },
   account: { modelName: 'auth_account' },

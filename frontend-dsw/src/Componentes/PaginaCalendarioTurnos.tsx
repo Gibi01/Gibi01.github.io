@@ -73,7 +73,7 @@ export default function PaginaCalendarioTurnos({ medico = false }: { medico?: bo
     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
     {(cargando || ocupado) && <LinearProgress aria-label="Cargando turnos" />}
     <Paper variant="outlined" sx={{ p: { xs: 1, md: 3 } }}>
-      <CalendarioTurnosReservados turnos={visibles} medico={medico} onRango={cambiarRango} onSeleccionar={t => { if (!ocupado) void seleccionar(t); }} />
+      <CalendarioTurnosReservados cargando={cargando} turnos={visibles} medico={medico} onRango={cambiarRango} onSeleccionar={t => { if (!ocupado) void seleccionar(t); }} />
       {!cargando && !visibles.length && <Alert severity="info" sx={{ mt: 2 }}>No hay turnos en este período con el estado seleccionado.</Alert>}
     </Paper>
     <Dialog open={!!seleccionado} onClose={() => { if (!ocupado) { setSeleccionado(null); setAccion(null); } }} fullWidth maxWidth="sm">

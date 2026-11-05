@@ -1,10 +1,10 @@
-import { LockMode, type EntityManager } from '@mikro-orm/core';
+import { type EntityManager } from '@mikro-orm/core';
 import { orm } from '../../shared/orm.js';
 import { config } from '../../shared/config.js';
 import { Turno } from './turno.entidad.js';
 import { NotificacionTurno, type TipoNotificacionTurno } from './notificacionTurno.entidad.js';
 
-const HORAS_RECORDATORIO = 24;
+import { enviarCorreo } from '../../shared/correo.js';
 const MINUTO = 60_000;
 const ZONA_HORARIA = 'America/Argentina/Buenos_Aires';
 
@@ -16,12 +16,10 @@ function fechaLegible(fecha: Date): string {
   }).format(fecha);
 }
 
-function contenido(turno: Turno, tipo: TipoNotificacionTurno): { asunto: string; texto: string } {
+function contenido(turno: Turno, tipo: Exclude<TipoNotificacionTurno, 'recordatorio'>): { asunto: string; texto: string } {
   const profesional = `Dr./Dra. ${turno.doctor.usuario.nombre} ${turno.doctor.usuario.apellido}`;
   const detalle = `Turno del ${fechaLegible(turno.fechaHoraTurno)} con ${profesional}.`;
   switch (tipo) {
-    case 'recordatorio':
-      return { asunto: 'Recordatorio de tu turno', texto: `Hola ${turno.usuario.nombre}: te recordamos tu próximo turno. ${detalle}` };
     case 'asistido':
       return { asunto: 'Confirmación de asistencia a tu turno', texto: `Hola ${turno.usuario.nombre}: tu turno fue marcado como asistido. ${detalle}` };
     case 'no_asistido':
@@ -32,7 +30,7 @@ function contenido(turno: Turno, tipo: TipoNotificacionTurno): { asunto: string;
 }
 
 // Se crea junto con el cambio de estado y se persiste en el mismo flush/transaction.
-export function encolarNotificacion(em: EntityManager, turno: Turno, tipo: TipoNotificacionTurno): void {
+export function encolarNotificacion(em: EntityManager, turno: Turno, tipo: Exclude<TipoNotificacionTurno, 'recordatorio'>): void {
   const { asunto, texto } = contenido(turno, tipo);
   em.create(NotificacionTurno, {
     turno,
@@ -47,63 +45,8 @@ export function encolarNotificacion(em: EntityManager, turno: Turno, tipo: TipoN
   });
 }
 
-async function encolarRecordatorios(): Promise<void> {
-  const ahora = new Date();
-  const limite = new Date(ahora.getTime() + HORAS_RECORDATORIO * 60 * MINUTO);
-  const em = orm.em.fork();
-  const turnos = await em.find(Turno, {
-    estado: 'pendiente',
-    fechaHoraTurno: { $gt: ahora, $lte: limite },
-  }, { populate: ['usuario', 'doctor', 'doctor.usuario'] });
-
-  for (const turno of turnos) {
-    const trabajo = orm.em.fork();
-    try {
-      await trabajo.transactional(async (tx) => {
-        const actual = await tx.findOne(Turno, { id: turno.id }, {
-          populate: ['usuario', 'doctor', 'doctor.usuario'],
-          lockMode: LockMode.PESSIMISTIC_WRITE,
-        });
-        if (!actual || actual.estado !== 'pendiente' || actual.fechaHoraTurno <= new Date()) return;
-        const existente = await tx.findOne(NotificacionTurno, { turno: actual, tipo: 'recordatorio' });
-        if (!existente) encolarNotificacion(tx, actual, 'recordatorio');
-      });
-    } catch (error) {
-      // La restricción única resuelve la carrera si otra instancia creó el mismo trabajo.
-      console.error(`No se pudo preparar el recordatorio del turno ${turno.id}`, error);
-    }
-  }
-}
-
-async function enviarConResend(notificacion: NotificacionTurno): Promise<string> {
-  const apiKey = config.resend.apiKey;
-  const from = config.resend.fromEmail;
-  if (!apiKey || !from) throw new Error('Faltan RESEND_API_KEY o RESEND_FROM_EMAIL');
-
-  const respuesta = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'Idempotency-Key': `turno-${notificacion.turno.id}-${notificacion.tipo}`,
-    },
-    body: JSON.stringify({
-      from,
-      to: [notificacion.destinatario],
-      subject: notificacion.asunto,
-      text: notificacion.texto,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const resultado = await respuesta.json() as { id?: string; message?: string };
-  if (!respuesta.ok || !resultado.id) {
-    throw new Error(`Resend HTTP ${respuesta.status}: ${resultado.message ?? 'respuesta sin identificador'}`);
-  }
-  return resultado.id;
-}
-
 async function procesarNotificaciones(): Promise<void> {
-  if (!config.resend.apiKey || !config.resend.fromEmail) return;
+  if (!config.brevo.apiKey || !config.brevo.fromEmail) return;
 
   const ahora = new Date();
   const em = orm.em.fork();
@@ -126,17 +69,17 @@ async function procesarNotificaciones(): Promise<void> {
 
     const notificacion = await tx.findOneOrFail(NotificacionTurno, { id: trabajo.id }, { populate: ['turno'] });
     const turno = notificacion.turno;
-    if (notificacion.tipo === 'recordatorio' && (turno.estado !== 'pendiente' || turno.fechaHoraTurno <= new Date())) {
+    if (notificacion.tipo === 'recordatorio') {
       await tx.nativeUpdate(NotificacionTurno, { id: trabajo.id, estado: 'procesando' }, { estado: 'omitido' });
       continue;
     }
 
     try {
-      const resendId = await enviarConResend(notificacion);
+      const proveedorId = await enviarCorreo(notificacion);
       await tx.nativeUpdate(NotificacionTurno, { id: trabajo.id, estado: 'procesando' }, {
         estado: 'enviado',
         enviadaEn: new Date(),
-        resendId,
+        proveedorId,
         ultimoError: null,
       });
     } catch (error) {
@@ -155,23 +98,26 @@ async function procesarNotificaciones(): Promise<void> {
 
 let ejecutando = false;
 
+// Los recordatorios anticipados se retiraron: Render Free suspende el proceso
+// sin tráfico y no garantiza ejecutar tareas a una hora determinada.
+// La cola de cambios de estado se conserva y se retoma al despertar.
+export async function despacharNotificacionesTurnos(): Promise<void> {
+  if (ejecutando || !config.brevo.apiKey || !config.brevo.fromEmail) return;
+  ejecutando = true;
+  try {
+    await procesarNotificaciones();
+  } catch (error) {
+    console.error('Error procesando notificaciones de turnos', error);
+  } finally {
+    ejecutando = false;
+  }
+}
+
 export function iniciarNotificacionesTurnos(): void {
-  if (!config.resend.apiKey || !config.resend.fromEmail) {
-    console.warn('Recordatorios por correo desactivados: configurá RESEND_API_KEY y RESEND_FROM_EMAIL');
+  if (!config.brevo.apiKey || !config.brevo.fromEmail) {
+    console.warn('Correos desactivados: configurá BREVO_API_KEY y BREVO_FROM_EMAIL');
     return;
   }
-  const ejecutar = async () => {
-    if (ejecutando) return;
-    ejecutando = true;
-    try {
-      await encolarRecordatorios();
-      await procesarNotificaciones();
-    } catch (error) {
-      console.error('Error procesando notificaciones de turnos', error);
-    } finally {
-      ejecutando = false;
-    }
-  };
-  void ejecutar();
-  setInterval(() => { void ejecutar(); }, MINUTO);
+  void despacharNotificacionesTurnos();
+  setInterval(() => { void despacharNotificacionesTurnos(); }, MINUTO).unref();
 }

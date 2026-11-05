@@ -17,7 +17,7 @@ for (const movil of [false, true]) {
     let cancelado = false;
     await page.route('**/api/turnos/2/cancelar', r => { cancelado = true; turno.estado = 'cancelado'; return r.fulfill({ json: { data: turno } }); });
     await page.goto('/mis-turnos');
-    const evento = page.locator('.fc-event').filter({ hasText: 'Laura Méndez' }).first();
+    const evento = movil ? page.getByRole('button', { name: /Laura Méndez.*Ver detalle/ }).first() : page.locator('.fc-event').filter({ hasText: 'Laura Méndez' }).first();
     await expect(evento).toBeAttached();
     await expect(page.locator('.fc-event-draggable')).toHaveCount(0);
     await evento.scrollIntoViewIfNeeded();

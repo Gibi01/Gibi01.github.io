@@ -61,7 +61,12 @@ export default function AdminUsuarios() {
     </EncabezadoPagina>
     <Paper variant="outlined" sx={{ p: 2, my: 3 }}>
       <TextField fullWidth label="Buscar por nombre o apellido" value={busqueda} onChange={e => cambiar(setBusqueda, e.target.value)} />
-      <Button variant="outlined" aria-expanded={mostrarFiltros} onClick={() => setMostrarFiltros(v => !v)} sx={{ display: { xs: 'inline-flex', md: 'none' }, mt: 2 }}>Filtros ({Number(rol !== 'todos') + Number(estado !== 'todos')})</Button>
+      <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
+      <Button variant="outlined" aria-expanded={mostrarFiltros} onClick={() => setMostrarFiltros(v => !v)} sx={{ display: { xs: 'inline-flex', md: 'none' }, minHeight: 48 }}>Filtros ({Number(rol !== 'todos') + Number(estado !== 'todos')})</Button>
+      <Button sx={{ minHeight: 48 }} onClick={() => { setBusqueda(''); setRol('todos'); setEstado('todos'); setOrden('recientes'); setPagina(0); }} variant="outlined">
+        Limpiar filtros
+      </Button>
+      </Stack>
       <Box sx={{ display: { xs: mostrarFiltros ? 'grid' : 'none', md: 'grid' }, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2, mt: 2 }}>
         <TextField select label="Rol" value={rol} onChange={e => cambiar(setRol, e.target.value)}>
           <MenuItem value="todos">Todos los roles</MenuItem>
@@ -74,7 +79,7 @@ export default function AdminUsuarios() {
           <MenuItem value="recientes">Más recientes</MenuItem><MenuItem value="nombre">Nombre (A–Z)</MenuItem>
         </TextField>
       </Box>
-      <Button sx={{ mt: 1 }} onClick={() => { setBusqueda(''); setRol('todos'); setEstado('todos'); setOrden('recientes'); setPagina(0); }}>Limpiar filtros</Button>
+
     </Paper>
     {cargando ? <Box role="status" sx={{ textAlign: 'center', py: 4 }}><CircularProgress aria-label="Cargando usuarios" /></Box>
       : error ? <Alert severity="error" action={<Button color="inherit" onClick={() => { setError(false); setCargando(true); setIntento(v => v + 1); }}>Reintentar</Button>}>No se pudieron cargar los usuarios.</Alert>

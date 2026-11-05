@@ -1,3 +1,4 @@
+import CalendarioTurnosMovil from './CalendarioTurnosMovil';
 import { useEffect, useRef } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -11,12 +12,13 @@ import './calendario.css';
 
 import { estadosTurno } from '../Tipos/dominio';
 const colores = { pendiente: '#0277BD', cancelado: '#616161', asistido: '#2E7D32', no_asistido: '#8D6700' };
-export default function CalendarioTurnosReservados({ turnos, medico, onRango, onSeleccionar }: {
-  turnos: Turno[]; medico: boolean; onRango: (rango: { desde: string; hasta: string }) => void; onSeleccionar: (turno: Turno) => void;
+export default function CalendarioTurnosReservados({ turnos, medico, onRango, onSeleccionar, cargando = false }: {
+  cargando?: boolean; turnos: Turno[]; medico: boolean; onRango: (rango: { desde: string; hasta: string }) => void; onSeleccionar: (turno: Turno) => void;
 }) {
   const movil = useMediaQuery(useTheme().breakpoints.down('sm'));
   const calendario = useRef<FullCalendar>(null);
   useEffect(() => { calendario.current?.getApi().changeView(movil ? 'timeGridDay' : medico ? 'timeGridWeek' : 'dayGridMonth'); }, [movil, medico]);
+  if (movil) return <CalendarioTurnosMovil turnos={turnos} medico={medico} onRango={onRango} onSeleccionar={onSeleccionar} cargando={cargando} />;
   const eventos = turnos.map(t => ({
     id: String(t.id), start: t.fechaHoraTurno,
     end: t.duracionTurnoMinutos ? new Date(+new Date(t.fechaHoraTurno) + t.duracionTurnoMinutos * 60000).toISOString() : undefined,

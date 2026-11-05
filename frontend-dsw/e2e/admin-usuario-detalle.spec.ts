@@ -42,9 +42,10 @@ for (const width of [390, 1440]) {
     await expect(page.getByText('Mario López', { exact: true }).filter({ visible: true })).toBeVisible();
     await page.screenshot({ path: info.outputPath('historial.png'), fullPage: true });
     await page.getByRole('button', { name: 'Calendario', exact: true }).click();
-    await expect(page.locator('.fc-event')).toContainText('Mario López');
+    const evento = width < 600 ? page.getByRole('button', { name: /Mario López.*Ver detalle/ }) : page.locator('.fc-event');
+    await expect(evento).toContainText('Mario López');
     await expect(page.locator('.fc-event-draggable')).toHaveCount(0);
-    await page.locator('.fc-event').click();
+    await evento.click();
     await expect(page.getByRole('dialog')).toContainText('Mario López');
     await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
